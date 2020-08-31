@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::{thread::sleep, time::Duration};
 
@@ -82,6 +83,7 @@ impl StateStore {
 // Exposed to StatefulComponents; component path is curried
 type SetState<'a> = &'a mut dyn FnMut(GenericState);
 
+// ////////////////////////////////////////////////////////////////////////////
 macro_rules! impl_patch_trait {
     () => {
         impl<T: 'static> KnowsType for T
@@ -95,6 +97,35 @@ macro_rules! impl_patch_trait {
     };
 }
 impl_patch_trait!();
+// ////////////////////////////////////////////////////////////////////////////
+trait StateCast<T> {}
+trait StateCastPatched<T: 'static> {
+    fn print_state_type(&self);
+    fn cast_state_from_any(&self, state: Box<dyn Any>) -> Box<T>;
+}
+
+macro_rules! impl_patch_statecaster {
+    () => {
+        impl<U: 'static, T> StateCastPatched<U> for T
+        where
+            T: StateCast<U>,
+        {
+            fn print_state_type(&self) {
+                println!("THE STATE TYPE IS {:?}", std::any::TypeId::of::<U>());
+            }
+
+            fn cast_state_from_any(&self, state: Box<dyn Any>) -> Box<U> {
+                match state.downcast::<U>() {
+                    Ok(u) => u,
+                    Err(_) => panic!("NOOOO"),
+                }
+            }
+        }
+    };
+}
+impl_patch_statecaster!();
+
+// ////////////////////////////////////////////////////////////////////////////
 
 fn main() {
     let mut state = StateStore::new();
@@ -217,6 +248,11 @@ struct CounterComponent {
     initial_counter: i32,
 }
 
+// struct CounterComponentState {
+//     num: i32,
+// }
+
+// impl StateCast<CounterComponentState> for CounterComponent {}
 impl StatefulComponent for CounterComponent {
     fn initial_state(&self) -> GenericState {
         GenericState {
