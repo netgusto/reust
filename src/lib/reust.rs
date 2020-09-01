@@ -3,27 +3,27 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 #[allow(dead_code)]
-pub enum El {
+pub enum El<TPayload> {
     None,
-    Node(Node<El>),
-    StatefulComponent(Box<dyn StatefulComponent>),
+    Node(Node<TPayload, El<TPayload>>),
+    Component(Box<dyn Component<TPayload>>),
 }
 
-#[allow(dead_code)]
-struct RenderedNode {
-    path: String,
-    el: Node<Option<RenderedNode>>,
+pub struct RenderedEl<TPayload> {
+    pub path: String,
+    pub payload: TPayload,
+    pub children: Vec<Option<RenderedEl<TPayload>>>,
 }
 
-pub struct Node<TChild> {
-    text: String,
-    children: Vec<TChild>,
+pub struct Node<TPayload, TChild> {
+    pub payload: TPayload,
+    pub children: Vec<TChild>,
 }
 
-impl<TChild> Node<TChild> {
-    pub fn new(s: &str) -> Self {
+impl<TPayload, TChild> Node<TPayload, TChild> {
+    pub fn new(payload: TPayload) -> Self {
         Self {
-            text: String::from(s),
+            payload,
             children: Vec::new(),
         }
     }
@@ -32,26 +32,35 @@ impl<TChild> Node<TChild> {
         self.children.push(e);
         self
     }
+
+    pub fn add_children(mut self, mut cn: Vec<TChild>) -> Self {
+        cn.drain(..).for_each(|c| self.children.push(c));
+        self
+    }
 }
 
 // Automatically implemented by macro for
-// all structs implementing trait StatefulComponent
-pub trait KnowsType {
+// all structs implementing trait Component
+pub trait KnowsType<TPayload> {
     fn type_id(&self) -> std::any::TypeId;
 }
 
-impl<T: 'static> KnowsType for T
+impl<T: 'static, U: 'static> KnowsType<U> for T
 where
-    T: StatefulComponent,
+    T: Component<U>,
+    U: Clone,
 {
     fn type_id(&self) -> std::any::TypeId {
         std::any::TypeId::of::<T>()
     }
 }
 
-pub trait StatefulComponent: KnowsType {
-    fn initial_state(&self) -> Rc<dyn Any>;
-    fn render(&self, state: Rc<dyn Any>, set_state: &mut dyn FnMut(Rc<dyn Any>)) -> El;
+pub trait Component<TPayload>: KnowsType<TPayload> {
+    fn initial_state(&self) -> Rc<dyn Any> {
+        Rc::new(0)
+    }
+
+    fn render(&self, state: Rc<dyn Any>, set_state: &mut dyn FnMut(Rc<dyn Any>)) -> El<TPayload>;
 }
 
 #[derive(Debug)]
@@ -78,19 +87,19 @@ impl StateStore {
     }
 }
 
-// Exposed to StatefulComponents; component path is curried
+// Exposed to Components; component path is curried
 pub type SetState<'a> = &'a mut dyn FnMut(Rc<dyn Any>);
 
 // ////////////////////////////////////////////////////////////////////////////
-pub trait StateCast<T> {}
-pub trait StateCastPatched<T: 'static> {
+pub trait StatefulComponent<T> {}
+pub trait StatefulComponentCast<T: 'static> {
     fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<T>;
     fn state_from_any(&self, state: Rc<dyn Any>) -> T;
 }
 
-impl<U: 'static, T> StateCastPatched<U> for T
+impl<U: 'static, T> StatefulComponentCast<U> for T
 where
-    T: StateCast<U>,
+    T: StatefulComponent<U>,
     U: Clone,
 {
     fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<U> {
@@ -107,12 +116,15 @@ where
 }
 // ////////////////////////////////////////////////////////////////////////////
 
-fn render(
-    el: &El,
+fn render<TPayload: 'static>(
+    el: &El<TPayload>,
     path: &str,
     sibling_num: usize,
     state_store: &mut StateStore,
-) -> Option<RenderedNode> {
+) -> Option<RenderedEl<TPayload>>
+where
+    TPayload: Clone,
+{
     match el {
         El::Node(n) => render_node(
             n,
@@ -120,7 +132,7 @@ fn render(
             sibling_num,
             state_store,
         ),
-        El::StatefulComponent(c) => render_stateful_component(
+        El::Component(c) => render_stateful_component(
             c,
             &format!("{}/{}~{:?}", path, sibling_num, c.type_id()),
             sibling_num,
@@ -130,35 +142,40 @@ fn render(
     }
 }
 
-fn render_node(
-    n: &Node<El>,
+fn render_node<TPayload: 'static>(
+    n: &Node<TPayload, El<TPayload>>,
     path: &str,
     _sibling_num: usize,
     state_store: &mut StateStore,
-) -> Option<RenderedNode> {
-    let mut new_n = Node::new(&n.text);
+) -> Option<RenderedEl<TPayload>>
+where
+    TPayload: Clone,
+{
+    let mut children: Vec<Option<RenderedEl<TPayload>>> = Vec::new();
 
     if !n.children.is_empty() {
         for i in 0..n.children.len() {
-            new_n
-                .children
-                .push(render(&n.children[i], path, i, state_store));
+            children.push(render(&n.children[i], path, i, state_store));
         }
     }
 
-    Some(RenderedNode {
+    Some(RenderedEl {
         path: String::from(path),
-        el: new_n,
+        payload: n.payload.clone(),
+        children,
     })
 }
 
 #[allow(clippy::borrowed_box)]
-fn render_stateful_component(
-    c: &Box<dyn StatefulComponent>,
+fn render_stateful_component<TPayload: 'static>(
+    c: &Box<dyn Component<TPayload>>,
     path: &str,
     sibling_num: usize,
     state_store: &mut StateStore,
-) -> Option<RenderedNode> {
+) -> Option<RenderedEl<TPayload>>
+where
+    TPayload: Clone,
+{
     let s = match state_store.get(path) {
         None => {
             let initial_state = c.initial_state();
@@ -173,18 +190,12 @@ fn render_stateful_component(
     render(&c.render(s, &mut set_state), path, sibling_num, state_store)
 }
 
-fn draw(e: Option<RenderedNode>, level: usize) {
-    match e {
-        None => {}
-        Some(n) => {
-            println!("{}{}", "    ".repeat(level), n.el.text);
-            for ch in n.el.children {
-                draw(ch, level + 1);
-            }
-        }
-    }
-}
-
-pub fn run_app(el: &El, state_store: &mut StateStore) {
-    draw(render(el, "", 0, state_store), 0);
+pub fn run_app<TPayload: 'static>(
+    el: &El<TPayload>,
+    state_store: &mut StateStore,
+) -> Option<RenderedEl<TPayload>>
+where
+    TPayload: Clone,
+{
+    render(el, "", 0, state_store)
 }
