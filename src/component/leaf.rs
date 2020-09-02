@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::rc::Rc;
 
-use crate::lib::frontend_static_text::{node, Payload as TextNode};
+use crate::lib::frontend_static_text::{node, TextNode};
 use crate::lib::reust::*;
 
 pub struct LeafComponent {

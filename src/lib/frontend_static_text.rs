@@ -1,11 +1,11 @@
 use super::reust::{El, Node, RenderedEl};
 
 #[derive(Clone)]
-pub struct Payload {
+pub struct TextNode {
     pub text: String,
 }
 
-impl Payload {
+impl TextNode {
     pub fn new(text: &str) -> Self {
         Self {
             text: String::from(text),
@@ -13,11 +13,11 @@ impl Payload {
     }
 }
 
-pub fn node(text: &str) -> Node<Payload, El<Payload>> {
-    Node::new(Payload::new(text))
+pub fn node(text: &str) -> Node<TextNode, El<TextNode>> {
+    Node::new(TextNode::new(text))
 }
 
-pub fn draw(e: Option<RenderedEl<Payload>>) {
+pub fn draw(e: Option<RenderedEl<TextNode>>) {
     clear_screen();
     draw_element(e, 0);
 }
@@ -26,7 +26,7 @@ fn clear_screen() {
     println!("\x1b[0;0H\x1b[2J");
 }
 
-fn draw_element(e: Option<RenderedEl<Payload>>, level: usize) {
+fn draw_element(e: Option<RenderedEl<TextNode>>, level: usize) {
     match e {
         None => {}
         Some(rel) => {

@@ -11,19 +11,19 @@ pub enum El<TPayload> {
 
 pub struct RenderedEl<TPayload> {
     pub path: String,
-    pub payload: TPayload,
+    pub payload: Rc<TPayload>,
     pub children: Vec<Option<RenderedEl<TPayload>>>,
 }
 
 pub struct Node<TPayload, TChild> {
-    pub payload: TPayload,
+    pub payload: Rc<TPayload>,
     pub children: Vec<TChild>,
 }
 
 impl<TPayload, TChild> Node<TPayload, TChild> {
     pub fn new(payload: TPayload) -> Self {
         Self {
-            payload,
+            payload: Rc::new(payload),
             children: Vec::new(),
         }
     }
@@ -48,7 +48,6 @@ pub trait KnowsType<TPayload> {
 impl<T: 'static, U: 'static> KnowsType<U> for T
 where
     T: Component<U>,
-    U: Clone,
 {
     fn type_id(&self) -> std::any::TypeId {
         std::any::TypeId::of::<T>()
@@ -121,10 +120,7 @@ fn render<TPayload: 'static>(
     path: &str,
     sibling_num: usize,
     state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
+) -> Option<RenderedEl<TPayload>> {
     match el {
         El::Node(n) => render_node(
             n,
@@ -147,10 +143,7 @@ fn render_node<TPayload: 'static>(
     path: &str,
     _sibling_num: usize,
     state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
+) -> Option<RenderedEl<TPayload>> {
     let mut children: Vec<Option<RenderedEl<TPayload>>> = Vec::new();
 
     if !n.children.is_empty() {
@@ -161,7 +154,7 @@ where
 
     Some(RenderedEl {
         path: String::from(path),
-        payload: n.payload.clone(),
+        payload: Rc::clone(&n.payload),
         children,
     })
 }
@@ -172,10 +165,7 @@ fn render_stateful_component<TPayload: 'static>(
     path: &str,
     sibling_num: usize,
     state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
+) -> Option<RenderedEl<TPayload>> {
     let s = match state_store.get(path) {
         None => {
             let initial_state = c.initial_state();
@@ -193,9 +183,6 @@ where
 pub fn run_app<TPayload: 'static>(
     el: &El<TPayload>,
     state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
+) -> Option<RenderedEl<TPayload>> {
     render(el, "", 0, state_store)
 }
