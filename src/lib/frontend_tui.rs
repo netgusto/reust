@@ -4,11 +4,12 @@ use termion::color;
 use termion::cursor::Goto;
 use termion::raw::RawTerminal;
 
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::sync::Mutex;
 
 use super::reust::RenderedEl;
 
-pub type MouseClickHandler = Arc<Mutex<dyn FnMut()>>;
+pub type MouseClickHandler = Rc<Mutex<dyn FnMut()>>;
 
 pub struct TUINode {
     pub text: Option<String>,

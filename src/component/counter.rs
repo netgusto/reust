@@ -24,8 +24,12 @@ impl Component<TextNode> for CounterComponent {
         })
     }
 
-    fn render(&self, state: Rc<dyn Any>, set_state: SetState) -> El<TextNode> {
-        let mut new_state = self.state_from_any(state);
+    fn render<'a>(
+        &self,
+        state: Rc<dyn Any + 'a>,
+        set_state: Box<dyn Fn(Rc<dyn Any>)>,
+    ) -> El<TextNode> {
+        let mut new_state = self.must_receive_state(state);
         new_state.num += self.increment;
         let counter = new_state.num;
         set_state(Rc::new(new_state));

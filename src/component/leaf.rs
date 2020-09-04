@@ -9,7 +9,11 @@ pub struct LeafComponent {
 }
 
 impl Component<TextNode> for LeafComponent {
-    fn render(&self, _: Rc<dyn Any>, _set_state: SetState) -> El<TextNode> {
+    fn render<'a>(
+        &self,
+        _: Rc<dyn Any + 'a>,
+        _set_state: Box<dyn Fn(Rc<dyn Any>)>,
+    ) -> El<TextNode> {
         if self.over_100 {
             El::Node(node("It's OVER 9000! (jk 100)"))
         } else {

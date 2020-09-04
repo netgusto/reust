@@ -1,3 +1,8 @@
+use std::any::Any;
+use std::cell::RefCell;
+use std::io::{stdout, Write};
+use std::rc::Rc;
+use std::sync::Mutex;
 use std::{thread::sleep, time::Duration};
 
 mod lib;
@@ -7,8 +12,6 @@ use lib::frontend_tui::{draw, TUINode};
 use lib::reust::*;
 
 mod component;
-
-use std::io::{stdout, Write};
 
 use termion::async_stdin;
 use termion::cursor;
@@ -22,7 +25,7 @@ fn main() {
     let stdin = async_stdin();
     let mut events_it = stdin.events();
 
-    let mut state = StateStore::new();
+    let state = Rc::new(RefCell::new(StateStore::new()));
     let mut current_app: Option<RenderedEl<TUINode>> = None;
     loop {
         write!(stdout, "{}{}", termion::clear::All, cursor::Hide).unwrap();
@@ -31,7 +34,7 @@ fn main() {
             break;
         }
 
-        let rendered = run_app(&app(), &mut state);
+        let rendered = run_app(&app(), Rc::clone(&state));
         draw(&mut stdout, &rendered);
         current_app = rendered;
         stdout.flush().unwrap();
@@ -40,8 +43,6 @@ fn main() {
 }
 
 fn app() -> El<TUINode> {
-    use std::sync::Arc;
-    use std::sync::Mutex;
     El::Node(
         Node::new(
             TUINode::new(10, 10)
@@ -49,19 +50,17 @@ fn app() -> El<TUINode> {
                 .set_height(3)
                 .set_width(20)
                 .set_border(true)
-                .set_on_click(Some(Arc::new(Mutex::new(|| panic!("CLICKEssssss"))))),
+                .set_on_click(Some(Rc::new(Mutex::new(|| panic!("CLICKEssssss"))))),
         )
         .add_child(El::Component(Box::new(Counter {}))),
     )
 }
 
-use std::any::Any;
-use std::rc::Rc;
-
 struct Counter {}
+#[derive(Clone)]
 struct CounterState {
     #[allow(dead_code)]
-    counter: i32,
+    pub counter: i32,
 }
 
 impl StatefulComponent<CounterState> for Counter {}
@@ -74,19 +73,22 @@ impl Component<TUINode> for Counter {
     fn render<'a>(
         &self,
         state: Rc<dyn Any + 'a>,
-        set_state: &mut dyn FnMut(Rc<dyn Any + 'a>),
+        set_state: Box<dyn Fn(Rc<dyn Any>)>,
     ) -> El<TUINode> {
-        use std::sync::Arc;
-        use std::sync::Mutex;
+        let s = self.must_receive_state(state);
+
+        let counter = s.counter;
 
         El::Node(Node::new(
             TUINode::new(30, 30)
-                .set_text(Some("Le bouton".to_string()))
+                .set_text(Some(format!("Le bouton ({})", counter)))
                 .set_width(30)
                 .set_height(30)
                 .set_border(true)
-                .set_on_click(Some(Arc::new(Mutex::new(|| {
-                    set_state(Rc::new(CounterState { counter: 42 }));
+                .set_on_click(Some(Rc::new(Mutex::new(move || {
+                    set_state(Rc::new(CounterState {
+                        counter: counter + 1,
+                    }));
                 })))),
         ))
     }

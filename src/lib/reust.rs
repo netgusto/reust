@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -59,7 +60,11 @@ pub trait Component<TPayload>: KnowsType<TPayload> {
         Rc::new(0)
     }
 
-    fn render(&self, state: Rc<dyn Any>, set_state: &mut dyn FnMut(Rc<dyn Any>)) -> El<TPayload>;
+    fn render<'a>(
+        &self,
+        state: Rc<dyn Any + 'a>,
+        set_state: Box<dyn Fn(Rc<dyn Any>)>,
+    ) -> El<TPayload>;
 }
 
 #[derive(Debug)]
@@ -86,14 +91,13 @@ impl StateStore {
     }
 }
 
-// Exposed to Components; component path is curried
-pub type SetState<'a> = &'a mut dyn FnMut(Rc<dyn Any>);
-
 // ////////////////////////////////////////////////////////////////////////////
 pub trait StatefulComponent<T> {}
 pub trait StatefulComponentCast<T: 'static> {
-    fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<T>;
-    fn state_from_any(&self, state: Rc<dyn Any>) -> T;
+    fn must_cast_state_rc_from_any(&self, state: Rc<dyn Any>) -> Rc<T>;
+    fn must_receive_state(&self, state: Rc<dyn Any>) -> T;
+    fn cast_state_rc_from_any(&self, state: Rc<dyn Any>) -> Result<Rc<T>, Rc<dyn Any>>;
+    fn receive_state(&self, state: Rc<dyn Any>) -> Result<T, Rc<dyn Any>>;
 }
 
 impl<U: 'static, T> StatefulComponentCast<U> for T
@@ -101,36 +105,47 @@ where
     T: StatefulComponent<U>,
     U: Clone,
 {
-    fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<U> {
-        match state.downcast::<U>() {
+    fn must_cast_state_rc_from_any(&self, state: Rc<dyn Any>) -> Rc<U> {
+        match self.cast_state_rc_from_any(state) {
             Ok(u) => u,
-            Err(_) => panic!("NOOOO"),
+            Err(_) => panic!("must_cast_state_rc_from_any: could not cast state to expected type; this is a programming error"),
         }
     }
 
-    fn state_from_any(&self, state: Rc<dyn Any>) -> U {
-        let x = self.cast_state_from_any(state);
-        (*x).clone()
+    fn must_receive_state(&self, state: Rc<dyn Any>) -> U {
+        let cast = self.must_cast_state_rc_from_any(state);
+        (*cast).clone()
+    }
+
+    fn cast_state_rc_from_any(&self, state: Rc<dyn Any>) -> Result<Rc<U>, Rc<dyn Any>> {
+        state.downcast::<U>()
+    }
+
+    fn receive_state(&self, state: Rc<dyn Any>) -> Result<U, Rc<dyn Any>> {
+        match self.cast_state_rc_from_any(state) {
+            Ok(u) => Ok((*u).clone()),
+            Err(e) => Err(e),
+        }
     }
 }
 // ////////////////////////////////////////////////////////////////////////////
 
 fn render<TPayload: 'static>(
     el: &El<TPayload>,
-    path: &str,
+    path: String,
     sibling_num: usize,
-    state_store: &mut StateStore,
+    state_store: Rc<RefCell<StateStore>>,
 ) -> Option<RenderedEl<TPayload>> {
     match el {
         El::Node(n) => render_node(
             n,
-            &format!("{}/{}~Node", path, sibling_num),
+            format!("{}/{}~Node", path, sibling_num),
             sibling_num,
             state_store,
         ),
         El::Component(c) => render_stateful_component(
             c,
-            &format!("{}/{}~{:?}", path, sibling_num, c.type_id()),
+            format!("{}/{}~{:?}", path, sibling_num, c.type_id()),
             sibling_num,
             state_store,
         ),
@@ -140,20 +155,25 @@ fn render<TPayload: 'static>(
 
 fn render_node<TPayload: 'static>(
     n: &Node<TPayload, El<TPayload>>,
-    path: &str,
+    path: String,
     _sibling_num: usize,
-    state_store: &mut StateStore,
+    state_store: Rc<RefCell<StateStore>>,
 ) -> Option<RenderedEl<TPayload>> {
     let mut children: Vec<Option<RenderedEl<TPayload>>> = Vec::new();
 
     if !n.children.is_empty() {
         for i in 0..n.children.len() {
-            children.push(render(&n.children[i], path, i, state_store));
+            children.push(render(
+                &n.children[i],
+                path.clone(),
+                i,
+                Rc::clone(&state_store),
+            ));
         }
     }
 
     Some(RenderedEl {
-        path: String::from(path),
+        path,
         payload: Rc::clone(&n.payload),
         children,
     })
@@ -162,27 +182,30 @@ fn render_node<TPayload: 'static>(
 #[allow(clippy::borrowed_box)]
 fn render_stateful_component<TPayload: 'static>(
     c: &Box<dyn Component<TPayload>>,
-    path: &str,
+    path: String,
     sibling_num: usize,
-    state_store: &mut StateStore,
+    state_store: Rc<RefCell<StateStore>>,
 ) -> Option<RenderedEl<TPayload>> {
-    let s = match state_store.get(path) {
-        None => {
-            let initial_state = c.initial_state();
-            state_store.set(path, initial_state.clone());
-            initial_state
-        }
+    let state_store_clone = Rc::clone(&state_store);
+    let path_clone = path.clone();
+
+    let set_state = Box::new(move |s: Rc<dyn Any>| {
+        state_store_clone
+            .borrow_mut()
+            .set(path_clone.as_str(), Rc::clone(&s))
+    });
+
+    let s = match state_store.borrow().get(path.as_str()) {
+        None => c.initial_state(),
         Some(s) => s,
     };
 
-    let mut set_state = |s: Rc<dyn Any>| state_store.set(path, s);
-
-    render(&c.render(s, &mut set_state), path, sibling_num, state_store)
+    render(&c.render(s, set_state), path, sibling_num, state_store)
 }
 
 pub fn run_app<TPayload: 'static>(
     el: &El<TPayload>,
-    state_store: &mut StateStore,
+    state_store: Rc<RefCell<StateStore>>,
 ) -> Option<RenderedEl<TPayload>> {
-    render(el, "", 0, state_store)
+    render(el, "".to_string(), 0, state_store)
 }

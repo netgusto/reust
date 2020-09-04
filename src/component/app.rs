@@ -11,7 +11,11 @@ pub struct AppComponent {
 }
 
 impl Component<TextNode> for AppComponent {
-    fn render(&self, _: Rc<dyn Any>, _set_state: SetState) -> El<TextNode> {
+    fn render<'a>(
+        &self,
+        _: Rc<dyn Any + 'a>,
+        _set_state: Box<dyn Fn(Rc<dyn Any>)>,
+    ) -> El<TextNode> {
         El::Node(node("Root").add_children(vec![
             El::Node(node("# Header A")),
             El::Component(Box::new(CounterComponent {
