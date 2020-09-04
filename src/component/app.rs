@@ -10,23 +10,25 @@ pub struct AppComponent {
     pub increment: i32,
 }
 
-impl Component<TextNode> for AppComponent {
-    fn render(&self, _: Rc<dyn Any>, _set_state: SetState) -> El<TextNode> {
-        El::Node(node("Root").add_children(vec![
-            El::Node(node("# Header A")),
+use crate::component::counter::CounterComponentState;
+
+impl<'a> Component<'a, TextNode> for AppComponent {
+    fn render(&self, _: Rc<CounterComponentState>, _set_state: SetState) -> El<TextNode> {
+        El::Node(node(String::from("Root")).add_children(vec![
+            El::Node(node(String::from("# Header A"))),
             El::Component(Box::new(CounterComponent {
                 initial_counter: 26,
                 increment: self.increment,
             })),
             El::Node(
-                node("----------------------------").add_children(vec![El::Component(Box::new(
-                    CounterComponent {
+                node(String::from("----------------------------")).add_children(vec![
+                    El::Component(Box::new(CounterComponent {
                         initial_counter: -80,
                         increment: self.increment,
-                    },
-                ))]),
+                    })),
+                ]),
             ),
-            El::Node(node("Ctrl-c to quit")),
+            El::Node(node(String::from("Ctrl-c to quit"))),
         ]))
     }
 }

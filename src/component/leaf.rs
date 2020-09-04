@@ -8,12 +8,14 @@ pub struct LeafComponent {
     pub over_100: bool,
 }
 
-impl Component<TextNode> for LeafComponent {
-    fn render(&self, _: Rc<dyn Any>, _set_state: SetState) -> El<TextNode> {
+use crate::component::counter::CounterComponentState;
+
+impl<'a> Component<'a, TextNode> for LeafComponent {
+    fn render(&self, _: Rc<CounterComponentState>, _set_state: SetState) -> El<TextNode> {
         if self.over_100 {
-            El::Node(node("It's OVER 9000! (jk 100)"))
+            El::Node(node(String::from("It's OVER 9000! (jk 100)")))
         } else {
-            El::Node(node("The leaf"))
+            El::Node(node(String::from("The leaf")))
         }
     }
 }

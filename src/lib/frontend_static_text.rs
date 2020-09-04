@@ -6,14 +6,12 @@ pub struct TextNode {
 }
 
 impl TextNode {
-    pub fn new(text: &str) -> Self {
-        Self {
-            text: String::from(text),
-        }
+    pub fn new(text: String) -> Self {
+        Self { text }
     }
 }
 
-pub fn node(text: &str) -> Node<TextNode, El<TextNode>> {
+pub fn node<'a>(text: String) -> Node<TextNode, El<'a, TextNode>> {
     Node::new(TextNode::new(text))
 }
 

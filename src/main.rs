@@ -39,7 +39,8 @@ fn main() {
     }
 }
 
-fn app() -> El<TUINode> {
+fn app<'a>() -> El<'a, TUINode<'a>> {
+    use std::cell::Cell;
     use std::sync::Arc;
     use std::sync::Mutex;
     El::Node(
@@ -49,9 +50,10 @@ fn app() -> El<TUINode> {
                 .set_height(3)
                 .set_width(20)
                 .set_border(true)
-                .set_on_click(Some(Arc::new(Mutex::new(|| panic!("CLICKEssssss"))))),
-        )
-        .add_child(El::Component(Box::new(Counter {}))),
+                .set_on_click(Some(Arc::new(Mutex::new(Cell::new(|| {
+                    panic!("Clicked the button")
+                }))))),
+        ), // .add_child(El::Component(Box::new(Counter {}))),
     )
 }
 
@@ -59,23 +61,26 @@ use std::any::Any;
 use std::rc::Rc;
 
 struct Counter {}
-struct CounterState {
+pub struct CounterState {
     #[allow(dead_code)]
     counter: i32,
 }
 
-impl StatefulComponent<CounterState> for Counter {}
-impl Component<TUINode> for Counter {
-    fn initial_state(&self) -> Rc<dyn Any> {
-        Rc::new(CounterState { counter: 0 })
+use crate::component::counter::CounterComponentState;
+
+// impl StatefulComponent<CounterComponentState> for Counter {}
+impl<'a> Component<'a, TUINode<'a>> for Counter {
+    fn initial_state(&self) -> Rc<CounterComponentState> {
+        Rc::new(CounterComponentState { num: 0 })
     }
 
     #[allow(unused_variables)]
-    fn render<'a>(
+    fn render(
         &self,
-        state: Rc<dyn Any + 'a>,
-        set_state: &mut dyn FnMut(Rc<dyn Any + 'a>),
-    ) -> El<TUINode> {
+        state: Rc<CounterComponentState>,
+        set_state: &'a mut dyn FnMut(Rc<CounterComponentState>),
+    ) -> El<TUINode<'a>> {
+        use std::cell::Cell;
         use std::sync::Arc;
         use std::sync::Mutex;
 
@@ -85,9 +90,9 @@ impl Component<TUINode> for Counter {
                 .set_width(30)
                 .set_height(30)
                 .set_border(true)
-                .set_on_click(Some(Arc::new(Mutex::new(|| {
-                    set_state(Rc::new(CounterState { counter: 42 }));
-                })))),
+                .set_on_click(Some(Arc::new(Mutex::new(Cell::new(|| {
+                    // set_state(Rc::new(CounterComponentState { num: 42 }));
+                }))))),
         ))
     }
 }
@@ -136,7 +141,7 @@ fn track_mouse_clicked(el: &Option<RenderedEl<TUINode>>, left: u16, top: u16) {
             {
                 let my_box_arc = c.clone();
                 let mut my_box = my_box_arc.lock().unwrap();
-                (*my_box)();
+                (*my_box.get_mut())();
             }
         }
     }

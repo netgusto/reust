@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 #[allow(dead_code)]
-pub enum El<TPayload> {
+pub enum El<'a, TPayload: 'a> {
     None,
-    Node(Node<TPayload, El<TPayload>>),
-    Component(Box<dyn Component<TPayload>>),
+    Node(Node<TPayload, El<'a, TPayload>>),
+    Component(Box<dyn Component<'a, TPayload> + 'a>),
 }
 
 pub struct RenderedEl<TPayload> {
@@ -45,26 +45,32 @@ pub trait KnowsType<TPayload> {
     fn type_id(&self) -> std::any::TypeId;
 }
 
-impl<T: 'static, U: 'static> KnowsType<U> for T
-where
-    T: Component<U>,
-{
-    fn type_id(&self) -> std::any::TypeId {
-        std::any::TypeId::of::<T>()
-    }
-}
+// impl<T: 'static, U: 'static> KnowsType<U> for T
+// where
+//     T: Component<U>,
+// {
+//     fn type_id(&self) -> std::any::TypeId {
+//         std::any::TypeId::of::<T>()
+//     }
+// }
 
-pub trait Component<TPayload>: KnowsType<TPayload> {
-    fn initial_state(&self) -> Rc<dyn Any> {
-        Rc::new(0)
+use crate::component::counter::CounterComponentState;
+
+pub trait Component<'a, TPayload> {
+    fn initial_state(&self) -> Rc<CounterComponentState> {
+        Rc::new(CounterComponentState { num: 0 })
     }
 
-    fn render(&self, state: Rc<dyn Any>, set_state: &mut dyn FnMut(Rc<dyn Any>)) -> El<TPayload>;
+    fn render(
+        &self,
+        state: Rc<CounterComponentState>,
+        set_state: &'a mut dyn FnMut(Rc<CounterComponentState>),
+    ) -> El<TPayload>;
 }
 
 #[derive(Debug)]
 pub struct StateStore {
-    state: HashMap<String, Rc<dyn Any>>,
+    state: HashMap<String, Rc<CounterComponentState>>,
 }
 
 impl StateStore {
@@ -74,11 +80,11 @@ impl StateStore {
         }
     }
 
-    pub fn set(&mut self, path: &str, state: Rc<dyn Any>) {
+    pub fn set(&mut self, path: &str, state: Rc<CounterComponentState>) {
         self.state.insert(String::from(path), state);
     }
 
-    pub fn get(&self, path: &str) -> Option<Rc<dyn Any>> {
+    pub fn get(&self, path: &str) -> Option<Rc<CounterComponentState>> {
         match self.state.get(path) {
             None => None,
             Some(s) => Some(Rc::clone(s)),
@@ -87,39 +93,39 @@ impl StateStore {
 }
 
 // Exposed to Components; component path is curried
-pub type SetState<'a> = &'a mut dyn FnMut(Rc<dyn Any>);
+pub type SetState<'a> = &'a mut dyn FnMut(Rc<CounterComponentState>);
 
 // ////////////////////////////////////////////////////////////////////////////
-pub trait StatefulComponent<T> {}
-pub trait StatefulComponentCast<T: 'static> {
-    fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<T>;
-    fn state_from_any(&self, state: Rc<dyn Any>) -> T;
-}
+// pub trait StatefulComponent<T> {}
+// pub trait StatefulComponentCast<T: 'static> {
+//     fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<T>;
+//     fn state_from_any(&self, state: Rc<dyn Any>) -> T;
+// }
 
-impl<U: 'static, T> StatefulComponentCast<U> for T
-where
-    T: StatefulComponent<U>,
-    U: Clone,
-{
-    fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<U> {
-        match state.downcast::<U>() {
-            Ok(u) => u,
-            Err(_) => panic!("NOOOO"),
-        }
-    }
+// impl<U: 'static, T> StatefulComponentCast<U> for T
+// where
+//     T: StatefulComponent<U>,
+//     U: Clone,
+// {
+//     fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<U> {
+//         match state.downcast::<U>() {
+//             Ok(u) => u,
+//             Err(_) => panic!("NOOOO"),
+//         }
+//     }
 
-    fn state_from_any(&self, state: Rc<dyn Any>) -> U {
-        let x = self.cast_state_from_any(state);
-        (*x).clone()
-    }
-}
+//     fn state_from_any(&self, state: Rc<dyn Any>) -> U {
+//         let x = self.cast_state_from_any(state);
+//         (*x).clone()
+//     }
+// }
 // ////////////////////////////////////////////////////////////////////////////
 
-fn render<TPayload: 'static>(
-    el: &El<TPayload>,
-    path: &str,
+fn render<'a, TPayload: 'a>(
+    el: &'a El<'a, TPayload>,
+    path: &'a str,
     sibling_num: usize,
-    state_store: &mut StateStore,
+    state_store: &'a mut StateStore,
 ) -> Option<RenderedEl<TPayload>> {
     match el {
         El::Node(n) => render_node(
@@ -130,7 +136,7 @@ fn render<TPayload: 'static>(
         ),
         El::Component(c) => render_stateful_component(
             c,
-            &format!("{}/{}~{:?}", path, sibling_num, c.type_id()),
+            &format!("{}/{}~{:?}", path, sibling_num, "ZETYPE"),
             sibling_num,
             state_store,
         ),
@@ -138,18 +144,19 @@ fn render<TPayload: 'static>(
     }
 }
 
-fn render_node<TPayload: 'static>(
-    n: &Node<TPayload, El<TPayload>>,
-    path: &str,
+fn render_node<'a, TPayload: 'a>(
+    n: &'a Node<TPayload, El<'a, TPayload>>,
+    path: &'a str,
     _sibling_num: usize,
-    state_store: &mut StateStore,
+    state_store: &'a mut StateStore,
 ) -> Option<RenderedEl<TPayload>> {
     let mut children: Vec<Option<RenderedEl<TPayload>>> = Vec::new();
 
     if !n.children.is_empty() {
-        for i in 0..n.children.len() {
-            children.push(render(&n.children[i], path, i, state_store));
-        }
+        children.push(render(&n.children[0], path, 0, state_store));
+        // for i in 0..n.children.len() {
+        //     children.push(render(&n.children[i], path, i, state_store));
+        // }
     }
 
     Some(RenderedEl {
@@ -160,11 +167,11 @@ fn render_node<TPayload: 'static>(
 }
 
 #[allow(clippy::borrowed_box)]
-fn render_stateful_component<TPayload: 'static>(
-    c: &Box<dyn Component<TPayload>>,
-    path: &str,
+fn render_stateful_component<'a, TPayload: 'a>(
+    c: &'a Box<dyn Component<'a, TPayload> + 'a>,
+    path: &'a str,
     sibling_num: usize,
-    state_store: &mut StateStore,
+    state_store: &'a mut StateStore,
 ) -> Option<RenderedEl<TPayload>> {
     let s = match state_store.get(path) {
         None => {
@@ -175,14 +182,14 @@ fn render_stateful_component<TPayload: 'static>(
         Some(s) => s,
     };
 
-    let mut set_state = |s: Rc<dyn Any>| state_store.set(path, s);
+    let mut set_state = |s: Rc<CounterComponentState>| state_store.set(path, s);
 
     render(&c.render(s, &mut set_state), path, sibling_num, state_store)
 }
 
-pub fn run_app<TPayload: 'static>(
-    el: &El<TPayload>,
-    state_store: &mut StateStore,
+pub fn run_app<'a, TPayload: 'a>(
+    el: &'a El<'a, TPayload>,
+    state_store: &'a mut StateStore,
 ) -> Option<RenderedEl<TPayload>> {
     render(el, "", 0, state_store)
 }

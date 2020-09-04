@@ -1,16 +1,16 @@
+use std::cell::Cell;
 use std::io::{Stdout, Write};
+use std::sync::{Arc, Mutex};
 
 use termion::color;
 use termion::cursor::Goto;
 use termion::raw::RawTerminal;
 
-use std::sync::{Arc, Mutex};
-
 use super::reust::RenderedEl;
 
-pub type MouseClickHandler = Arc<Mutex<dyn FnMut()>>;
+pub type MouseClickHandler<'a> = Arc<Mutex<Cell<dyn FnMut() + 'a>>>;
 
-pub struct TUINode {
+pub struct TUINode<'a> {
     pub text: Option<String>,
     pub top: u16,
     pub left: u16,
@@ -18,10 +18,10 @@ pub struct TUINode {
     pub height: u16,
     pub border: bool,
     pub disabled: bool,
-    pub on_click: Option<MouseClickHandler>,
+    pub on_click: Option<MouseClickHandler<'a>>,
 }
 
-impl Default for TUINode {
+impl<'a> Default for TUINode<'a> {
     fn default() -> Self {
         TUINode {
             left: 1,
@@ -36,8 +36,8 @@ impl Default for TUINode {
     }
 }
 
-impl TUINode {
-    pub fn new(left: u16, top: u16) -> TUINode {
+impl<'a> TUINode<'a> {
+    pub fn new(left: u16, top: u16) -> TUINode<'a> {
         TUINode {
             left,
             top,
@@ -71,7 +71,7 @@ impl TUINode {
         self
     }
 
-    pub fn set_on_click(mut self, handler: Option<MouseClickHandler>) -> Self {
+    pub fn set_on_click(mut self, handler: Option<MouseClickHandler<'a>>) -> Self {
         self.on_click = handler;
         self
     }

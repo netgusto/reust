@@ -11,33 +11,35 @@ pub struct CounterComponent {
     pub increment: i32,
 }
 
-#[derive(Clone)]
-struct CounterComponentState {
-    num: i32,
+#[derive(Clone, Debug)]
+pub struct CounterComponentState {
+    pub num: i32,
 }
 
-impl StatefulComponent<CounterComponentState> for CounterComponent {}
-impl Component<TextNode> for CounterComponent {
-    fn initial_state(&self) -> Rc<dyn Any> {
+// impl StatefulComponent<CounterComponentState> for CounterComponent {}
+impl<'a> Component<'a, TextNode> for CounterComponent {
+    fn initial_state(&self) -> Rc<CounterComponentState> {
         Rc::new(CounterComponentState {
             num: self.initial_counter,
         })
     }
 
-    fn render(&self, state: Rc<dyn Any>, set_state: SetState) -> El<TextNode> {
-        let mut new_state = self.state_from_any(state);
+    fn render(&self, state: Rc<CounterComponentState>, set_state: SetState) -> El<TextNode> {
+        let mut new_state = (*state).clone(); //self.state_from_any(state);
         new_state.num += self.increment;
         let counter = new_state.num;
         set_state(Rc::new(new_state));
 
         if counter % 10 == 0 {
-            El::Node(node(&format!("{} IS %10!; skipping!", counter)))
+            El::Node(node(format!("{} IS %10!; skipping!", counter)))
         } else {
             El::Node(
-                node(&format!("The counter is: {}", counter)).add_child(El::Node(
-                    node("Sub element").add_child(El::Component(Box::new(LeafComponent {
-                        over_100: counter > 100,
-                    }))),
+                node(format!("The counter is: {}", counter)).add_child(El::Node(
+                    node(String::from("Sub element")).add_child(El::Component(Box::new(
+                        LeafComponent {
+                            over_100: counter > 100,
+                        },
+                    ))),
                 )),
             )
         }
