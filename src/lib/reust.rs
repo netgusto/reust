@@ -1,38 +1,47 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[allow(dead_code)]
 pub enum El<TPayload> {
     None,
     Node(Node<TPayload, El<TPayload>>),
     Component(Box<dyn Component<TPayload>>),
+    Container(Vec<El<TPayload>>),
 }
 
-pub struct RenderedEl<TPayload> {
+pub enum RenderedEl<TPayload> {
+    None,
+    Node(RenderedNode<TPayload>),
+    Container(Vec<RenderedEl<TPayload>>),
+}
+
+pub struct RenderedNode<TPayload> {
     pub path: String,
-    pub payload: TPayload,
-    pub children: Vec<Option<RenderedEl<TPayload>>>,
+    pub payload: Rc<TPayload>,
+    pub children: Vec<RenderedEl<TPayload>>,
 }
 
 pub struct Node<TPayload, TChild> {
-    pub payload: TPayload,
+    pub payload: Rc<TPayload>,
     pub children: Vec<TChild>,
 }
 
 impl<TPayload, TChild> Node<TPayload, TChild> {
     pub fn new(payload: TPayload) -> Self {
         Self {
-            payload,
+            payload: Rc::new(payload),
             children: Vec::new(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn add_child(mut self, e: TChild) -> Self {
         self.children.push(e);
         self
     }
 
+    #[allow(dead_code)]
     pub fn add_children(mut self, mut cn: Vec<TChild>) -> Self {
         cn.drain(..).for_each(|c| self.children.push(c));
         self
@@ -48,19 +57,21 @@ pub trait KnowsType<TPayload> {
 impl<T: 'static, U: 'static> KnowsType<U> for T
 where
     T: Component<U>,
-    U: Clone,
 {
     fn type_id(&self) -> std::any::TypeId {
         std::any::TypeId::of::<T>()
     }
 }
 
+pub type BoxedState = dyn Any;
+pub type SetState = dyn Fn(Rc<BoxedState>);
+
 pub trait Component<TPayload>: KnowsType<TPayload> {
     fn initial_state(&self) -> Rc<dyn Any> {
         Rc::new(0)
     }
 
-    fn render(&self, state: Rc<dyn Any>, set_state: &mut dyn FnMut(Rc<dyn Any>)) -> El<TPayload>;
+    fn render(&self, state: Rc<BoxedState>, set_state: Rc<SetState>) -> El<TPayload>;
 }
 
 #[derive(Debug)]
@@ -68,8 +79,12 @@ pub struct StateStore {
     state: HashMap<String, Rc<dyn Any>>,
 }
 
+pub fn new_state_store() -> Rc<RefCell<StateStore>> {
+    Rc::new(RefCell::new(StateStore::new()))
+}
+
 impl StateStore {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             state: HashMap::new(),
         }
@@ -87,81 +102,115 @@ impl StateStore {
     }
 }
 
-// Exposed to Components; component path is curried
-pub type SetState<'a> = &'a mut dyn FnMut(Rc<dyn Any>);
-
 // ////////////////////////////////////////////////////////////////////////////
-pub trait StatefulComponent<T> {}
-pub trait StatefulComponentCast<T: 'static> {
-    fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<T>;
-    fn state_from_any(&self, state: Rc<dyn Any>) -> T;
+pub trait StateReceiver<T> {}
+pub trait StateReceiverDefault<T: 'static> {
+    fn must_receive_state_rc(&self, state: Rc<dyn Any>) -> Rc<T>;
+    fn must_receive_state(&self, state: Rc<dyn Any>) -> T;
+    fn receive_state_rc(&self, state: Rc<dyn Any>) -> Result<Rc<T>, Rc<dyn Any>>;
+    fn receive_state(&self, state: Rc<dyn Any>) -> Result<T, Rc<dyn Any>>;
 }
 
-impl<U: 'static, T> StatefulComponentCast<U> for T
+impl<U: 'static, T> StateReceiverDefault<U> for T
 where
-    T: StatefulComponent<U>,
+    T: StateReceiver<U>,
     U: Clone,
 {
-    fn cast_state_from_any(&self, state: Rc<dyn Any>) -> Rc<U> {
-        match state.downcast::<U>() {
+    fn must_receive_state_rc(&self, state: Rc<dyn Any>) -> Rc<U> {
+        match self.receive_state_rc(state) {
             Ok(u) => u,
-            Err(_) => panic!("NOOOO"),
+            Err(_) => panic!("StateReceiver.must_receive_state_rc: could not cast state to expected type; this is a programming error"),
         }
     }
 
-    fn state_from_any(&self, state: Rc<dyn Any>) -> U {
-        let x = self.cast_state_from_any(state);
-        (*x).clone()
+    fn must_receive_state(&self, state: Rc<dyn Any>) -> U {
+        let cast = self.must_receive_state_rc(state);
+        (*cast).clone()
+    }
+
+    fn receive_state_rc(&self, state: Rc<dyn Any>) -> Result<Rc<U>, Rc<dyn Any>> {
+        state.downcast::<U>()
+    }
+
+    fn receive_state(&self, state: Rc<dyn Any>) -> Result<U, Rc<dyn Any>> {
+        match self.receive_state_rc(state) {
+            Ok(u) => Ok((*u).clone()),
+            Err(e) => Err(e),
+        }
     }
 }
 // ////////////////////////////////////////////////////////////////////////////
 
 fn render<TPayload: 'static>(
+    // static constraint on type: to satisfy .type_id() contraints
     el: &El<TPayload>,
-    path: &str,
+    path: String,
     sibling_num: usize,
-    state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
+    state_store: Rc<RefCell<StateStore>>,
+) -> RenderedEl<TPayload> {
+    // FIXME: more resilient algorithm than the "path" for tree reconciliation with state
     match el {
+        El::None => RenderedEl::None,
         El::Node(n) => render_node(
             n,
-            &format!("{}/{}~Node", path, sibling_num),
+            format!("{}/{}~Node", path, sibling_num),
             sibling_num,
             state_store,
         ),
         El::Component(c) => render_stateful_component(
             c,
-            &format!("{}/{}~{:?}", path, sibling_num, c.type_id()),
+            format!("{}/{}~{:?}", path, sibling_num, c.type_id()),
             sibling_num,
             state_store,
         ),
-        El::None => None,
+        El::Container(c) => render_container(
+            c,
+            format!("{}/{}~Container", path, sibling_num),
+            sibling_num,
+            state_store,
+        ),
     }
+}
+
+fn render_container<TPayload: 'static>(
+    cont: &[El<TPayload>],
+    path: String,
+    _sibling_num: usize,
+    state_store: Rc<RefCell<StateStore>>,
+) -> RenderedEl<TPayload> {
+    let mut container: Vec<RenderedEl<TPayload>> = Vec::new();
+    for (sibling_num, ch) in cont.iter().enumerate() {
+        container.push(render(
+            ch,
+            path.clone(),
+            sibling_num,
+            Rc::clone(&state_store),
+        ))
+    }
+
+    RenderedEl::Container(container)
 }
 
 fn render_node<TPayload: 'static>(
     n: &Node<TPayload, El<TPayload>>,
-    path: &str,
+    path: String,
     _sibling_num: usize,
-    state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
-    let mut children: Vec<Option<RenderedEl<TPayload>>> = Vec::new();
+    state_store: Rc<RefCell<StateStore>>,
+) -> RenderedEl<TPayload> {
+    let mut children: Vec<RenderedEl<TPayload>> = Vec::new();
 
-    if !n.children.is_empty() {
-        for i in 0..n.children.len() {
-            children.push(render(&n.children[i], path, i, state_store));
-        }
+    for i in 0..n.children.len() {
+        children.push(render(
+            &n.children[i],
+            path.clone(),
+            i,
+            Rc::clone(&state_store),
+        ));
     }
 
-    Some(RenderedEl {
-        path: String::from(path),
-        payload: n.payload.clone(),
+    RenderedEl::Node(RenderedNode {
+        path,
+        payload: Rc::clone(&n.payload),
         children,
     })
 }
@@ -169,33 +218,30 @@ where
 #[allow(clippy::borrowed_box)]
 fn render_stateful_component<TPayload: 'static>(
     c: &Box<dyn Component<TPayload>>,
-    path: &str,
+    path: String,
     sibling_num: usize,
-    state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
-    let s = match state_store.get(path) {
-        None => {
-            let initial_state = c.initial_state();
-            state_store.set(path, initial_state.clone());
-            initial_state
-        }
+    state_store: Rc<RefCell<StateStore>>,
+) -> RenderedEl<TPayload> {
+    let state_store_clone = Rc::clone(&state_store);
+    let path_clone = path.clone();
+
+    let set_state = Rc::new(move |s: Rc<dyn Any>| {
+        state_store_clone
+            .borrow_mut()
+            .set(path_clone.as_str(), Rc::clone(&s))
+    });
+
+    let s = match state_store.borrow().get(path.as_str()) {
+        None => c.initial_state(),
         Some(s) => s,
     };
 
-    let mut set_state = |s: Rc<dyn Any>| state_store.set(path, s);
-
-    render(&c.render(s, &mut set_state), path, sibling_num, state_store)
+    render(&c.render(s, set_state), path, sibling_num, state_store)
 }
 
-pub fn run_app<TPayload: 'static>(
+pub fn render_app_to_graph<TPayload: 'static>(
     el: &El<TPayload>,
-    state_store: &mut StateStore,
-) -> Option<RenderedEl<TPayload>>
-where
-    TPayload: Clone,
-{
-    render(el, "", 0, state_store)
+    state_store: Rc<RefCell<StateStore>>,
+) -> RenderedEl<TPayload> {
+    render(el, "".to_string(), 0, state_store)
 }
