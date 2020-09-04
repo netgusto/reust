@@ -103,7 +103,7 @@ impl TUINode {
     }
 }
 
-pub fn draw(stdout: &mut RawTerminal<Stdout>, el: &RenderedEl<TUINode>) {
+pub fn draw_graph(stdout: &mut RawTerminal<Stdout>, el: &RenderedEl<TUINode>) {
     write!(stdout, "{}{}", termion::clear::All, cursor::Hide).unwrap();
     draw_rendered(stdout, el);
     stdout.flush().unwrap();
@@ -184,7 +184,8 @@ fn draw_rendered_container(stdout: &mut RawTerminal<Stdout>, cont: &[RenderedEl<
 pub fn process_events(
     events_it: &mut Events<AsyncReader>,
     app: &Option<RenderedEl<TUINode>>,
-) -> bool {
+) -> bool // true: quit application
+{
     loop {
         let event = events_it.next();
         match event {

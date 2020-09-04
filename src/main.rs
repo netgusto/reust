@@ -3,12 +3,12 @@ use std::time::Duration;
 
 mod lib;
 
-use lib::frontend_tui::{draw, process_events, TUINode, VSync};
+use lib::frontend_tui::{draw_graph, process_events, VSync};
 use lib::reust::*;
 
 mod component;
 
-use component::app::App;
+use component::app::app;
 
 use termion::async_stdin;
 use termion::input::{MouseTerminal, TermRead};
@@ -19,24 +19,20 @@ fn main() {
     let stdin = async_stdin();
     let mut events_it = stdin.events();
 
+    let mut vsync = VSync::new(Duration::from_millis(16));
+
     let state = new_state_store();
     let mut current_graph = None;
 
-    let mut vsync = VSync::new(Duration::from_millis(16));
-
     loop {
-        if let true = process_events(&mut events_it, &current_graph) {
+        if process_events(&mut events_it, &current_graph) {
             break;
         }
 
-        let rendered = render_app(&app(), state.clone());
-        draw(&mut stdout, &rendered);
-        current_graph = Some(rendered);
+        let graph = render_app_to_graph(&app(), state.clone());
+        draw_graph(&mut stdout, &graph);
+        current_graph = Some(graph);
 
         vsync.wait();
     }
-}
-
-fn app() -> El<TUINode> {
-    El::Component(Box::new(App {}))
 }

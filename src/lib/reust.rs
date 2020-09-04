@@ -142,11 +142,13 @@ where
 // ////////////////////////////////////////////////////////////////////////////
 
 fn render<TPayload: 'static>(
+    // static constraint on type: to satisfy .type_id() contraints
     el: &El<TPayload>,
     path: String,
     sibling_num: usize,
     state_store: Rc<RefCell<StateStore>>,
 ) -> RenderedEl<TPayload> {
+    // FIXME: more resilient algorithm than the "path" for tree reconciliation with state
     match el {
         El::None => RenderedEl::None,
         El::Node(n) => render_node(
@@ -237,7 +239,7 @@ fn render_stateful_component<TPayload: 'static>(
     render(&c.render(s, set_state), path, sibling_num, state_store)
 }
 
-pub fn render_app<TPayload: 'static>(
+pub fn render_app_to_graph<TPayload: 'static>(
     el: &El<TPayload>,
     state_store: Rc<RefCell<StateStore>>,
 ) -> RenderedEl<TPayload> {
