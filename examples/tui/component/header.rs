@@ -1,5 +1,5 @@
-use crate::lib::frontend_tui::*;
-use crate::lib::reust::*;
+use reust::engine::*;
+use reust::frontend::tui::*;
 
 pub struct HeaderProps {
     pub pos: Position,

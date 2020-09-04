@@ -2,10 +2,11 @@ use std::any::Any;
 use std::rc::Rc;
 use std::sync::Mutex;
 
+use reust::engine::*;
+use reust::frontend::tui::*;
+
 use crate::component::button::*;
 use crate::component::progress_bar::*;
-use crate::lib::frontend_tui::*;
-use crate::lib::reust::*;
 
 pub struct SettingsControls {
     pub increment: i32,

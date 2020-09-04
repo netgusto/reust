@@ -13,7 +13,7 @@ use termion::input::Events;
 use termion::raw::RawTerminal;
 use termion::AsyncReader;
 
-use super::reust::*;
+use crate::engine::*;
 
 #[derive(Default)]
 pub struct Position {

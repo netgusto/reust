@@ -1,13 +1,10 @@
 use std::io::stdout;
 use std::time::Duration;
 
-mod lib;
-
-use lib::frontend_tui::{draw_graph, process_events, VSync};
-use lib::reust::*;
+use reust::frontend::tui::*;
+use reust::prelude::*;
 
 mod component;
-
 use component::app::app;
 
 use termion::async_stdin;

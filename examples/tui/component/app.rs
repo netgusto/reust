@@ -1,5 +1,5 @@
-use crate::lib::frontend_tui::*;
-use crate::lib::reust::*;
+use reust::engine::*;
+use reust::frontend::tui::*;
 
 use crate::component::header::*;
 use crate::component::settings_controls::SettingsControls;
