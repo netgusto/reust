@@ -1,3 +1,4 @@
+/*
 use super::reust::{El, Node, RenderedEl};
 
 #[derive(Clone)]
@@ -6,6 +7,7 @@ pub struct TextNode {
 }
 
 impl TextNode {
+    #[allow(dead_code)]
     pub fn new(text: &str) -> Self {
         Self {
             text: String::from(text),
@@ -13,6 +15,7 @@ impl TextNode {
     }
 }
 
+#[allow(dead_code)]
 pub fn node(text: &str) -> Node<TextNode, El<TextNode>> {
     Node::new(TextNode::new(text))
 }
@@ -38,3 +41,4 @@ fn draw_element(e: Option<RenderedEl<TextNode>>, level: usize) {
         }
     }
 }
+*/
