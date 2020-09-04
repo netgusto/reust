@@ -40,6 +40,8 @@ fn main() {
 }
 
 fn app() -> El<TUINode> {
+    use std::sync::Arc;
+    use std::sync::Mutex;
     El::Node(
         Node::new(
             TUINode::new(10, 10)
@@ -47,7 +49,7 @@ fn app() -> El<TUINode> {
                 .set_height(3)
                 .set_width(20)
                 .set_border(true)
-                .set_on_click(Some(Box::new(|| panic!("CLICKED!!!")))),
+                .set_on_click(Some(Arc::new(Mutex::new(|| panic!("CLICKEssssss"))))),
         )
         .add_child(El::Component(Box::new(Counter {}))),
     )
@@ -58,6 +60,7 @@ use std::rc::Rc;
 
 struct Counter {}
 struct CounterState {
+    #[allow(dead_code)]
     counter: i32,
 }
 
@@ -67,17 +70,24 @@ impl Component<TUINode> for Counter {
         Rc::new(CounterState { counter: 0 })
     }
 
-    fn render(&self, state: Rc<dyn Any>, set_state: &mut dyn FnMut(Rc<dyn Any>)) -> El<TUINode> {
+    #[allow(unused_variables)]
+    fn render<'a>(
+        &self,
+        state: Rc<dyn Any + 'a>,
+        set_state: &mut dyn FnMut(Rc<dyn Any + 'a>),
+    ) -> El<TUINode> {
+        use std::sync::Arc;
+        use std::sync::Mutex;
+
         El::Node(Node::new(
             TUINode::new(30, 30)
                 .set_text(Some("Le bouton".to_string()))
                 .set_width(30)
                 .set_height(30)
                 .set_border(true)
-                .set_on_click(Some(Box::new(|| {
-                    let new_state = CounterState { counter: 42 };
-                    set_state(Rc::new(new_state));
-                }))),
+                .set_on_click(Some(Arc::new(Mutex::new(|| {
+                    set_state(Rc::new(CounterState { counter: 42 }));
+                })))),
         ))
     }
 }
@@ -123,7 +133,11 @@ fn track_mouse_clicked(el: &Option<RenderedEl<TUINode>>, left: u16, top: u16) {
         top,
     ) {
         if let Some(c) = &node.payload.on_click {
-            return c();
+            {
+                let my_box_arc = c.clone();
+                let mut my_box = my_box_arc.lock().unwrap();
+                (*my_box)();
+            }
         }
     }
 

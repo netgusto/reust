@@ -17,6 +17,7 @@ pub fn node(text: &str) -> Node<TextNode, El<TextNode>> {
     Node::new(TextNode::new(text))
 }
 
+#[allow(dead_code)]
 pub fn draw(e: Option<RenderedEl<TextNode>>) {
     clear_screen();
     draw_element(e, 0);

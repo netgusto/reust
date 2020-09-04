@@ -4,9 +4,11 @@ use termion::color;
 use termion::cursor::Goto;
 use termion::raw::RawTerminal;
 
+use std::sync::{Arc, Mutex};
+
 use super::reust::RenderedEl;
 
-pub type MouseClickHandler = Box<dyn Fn()>;
+pub type MouseClickHandler = Arc<Mutex<dyn FnMut()>>;
 
 pub struct TUINode {
     pub text: Option<String>,
@@ -43,6 +45,7 @@ impl TUINode {
         }
     }
 
+    #[allow(dead_code)]
     pub fn disable(mut self, dis: bool) -> Self {
         self.disabled = dis;
         self
